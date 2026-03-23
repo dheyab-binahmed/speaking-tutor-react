@@ -1,136 +1,139 @@
-import { useState } from 'react'
+import { useState, useCallback } from "react";
 
-const initialPosts = [
-  { id: 1, initials: 'MJ', author: 'Maria Johnson', time: '2 hours ago', language: 'Spanish', content: "Just completed my 30-day speaking streak! 🎉 I practiced Spanish for at least 15 minutes every day.", likes: 42, comments: 8, shares: 3, liked: true },
-  { id: 2, initials: 'TK', author: 'Takashi Kimura', time: '5 hours ago', language: 'English', content: "Can someone explain the difference between 'make' and 'do'?", likes: 18, comments: 12, shares: 1, liked: false },
-  { id: 3, initials: 'SL', author: 'Sarah Lee', time: 'Yesterday', language: 'French', content: 'Reached B2 level in French after 6 months!', likes: 95, comments: 23, shares: 12, liked: false }
-]
+// ── Styles (community-scoped) ──────────────────────────────────────────────
+import CommunityStyles   from "../styles/CommunityStyles";
 
-const partners = [
-  { id: 1, initials: 'AM', name: 'Ana Martinez', country: '🇪🇸 Spain', teaches: 'Spanish', learns: 'English' },
-  { id: 2, initials: 'HT', name: 'Hiroshi Tanaka', country: '🇯🇵 Japan', teaches: 'Japanese', learns: 'French' },
-  { id: 3, initials: 'EV', name: 'Emma Volkova', country: '🇷🇺 Russia', teaches: 'Russian', learns: 'Spanish' },
-  { id: 4, initials: 'KM', name: 'Kim Minjun', country: '🇰🇷 Korea', teaches: 'Korean', learns: 'English' }
-]
+// ── Data ──────────────────────────────────────────────────────────────────
+import { INITIAL_POSTS, INITIAL_GROUPS, INITIAL_PARTNERS } from "../data/communityData";
 
-const groups = [
-  { id: 1, icon: 'fa-comments', name: 'Spanish Conversation Club', desc: 'Weekly conversation practice', language: 'Spanish', level: 'Intermediate', members: '2.4k' },
-  { id: 2, icon: 'fa-book', name: 'Japanese for Beginners', desc: 'Learn hiragana and simple sentences', language: 'Japanese', level: 'Beginner', members: '1.8k' },
-  { id: 3, icon: 'fa-graduation-cap', name: 'Advanced French Grammar', desc: 'Deep grammar sessions', language: 'French', level: 'Advanced', members: '956' }
-]
+// ── UI utilities ──────────────────────────────────────────────────────────
+import ToastContainer    from "../components/components/ui/ToastContainer";
+import Section           from "../components/components/ui/Section";
+
+// ── Community sections ────────────────────────────────────────────────────
+import Hero              from "../components/components/Hero";
+import StateGrid         from "../components/components/StateGrid";
+
+// ── Feed ──────────────────────────────────────────────────────────────────
+import PostForm          from "../components/components/feed/PostForm";
+import PostCard          from "../components/components/feed/PostCard";
+
+// ── Partners ──────────────────────────────────────────────────────────────
+import PartnerCard       from "../components/components/partners/PartnerCard";
+
+// ── Groups ────────────────────────────────────────────────────────────────
+import GroupRow          from "../components/components/groups/GroupRow";
+import CreateGroupModel  from "../components/components/groups/CreateGroupModel";
+import GroupInterface    from "../components/components/groups/GroupInterface";
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function CommunityPage() {
-  const [posts, setPosts] = useState(initialPosts)
-  const [postText, setPostText] = useState('')
-  const [showGroupForm, setShowGroupForm] = useState(false)
-  const [groupDraft, setGroupDraft] = useState({ name: '', desc: '', language: '', level: 'Beginner' })
+  const [posts,           setPosts]           = useState(INITIAL_POSTS);
+  const [groups,          setGroups]          = useState(INITIAL_GROUPS);
+  const [partners,        setPartners]        = useState(INITIAL_PARTNERS);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [activeGroup,     setActiveGroup]     = useState(null);
+  const [toasts,          setToasts]          = useState([]);
 
-  function handlePost() {
-    if (postText.trim().length < 10) {
-      alert('Please write at least 10 characters.')
-      return
-    }
-    setPosts((prev) => [{ id: Date.now(), initials: 'ME', author: 'You', time: 'Just now', language: 'English', content: postText.trim(), likes: 0, comments: 0, shares: 0, liked: false }, ...prev])
-    setPostText('')
-  }
+  // ── Toast helper ──────────────────────────────────────────────────────────
+  const notify = useCallback((message, type = "info") => {
+    const id = Date.now();
+    setToasts((p) => [...p, { id, message, type }]);
+    setTimeout(() => setToasts((p) => p.filter((t) => t.id !== id)), 3000);
+  }, []);
 
-  function toggleLike(id) {
-    setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, liked: !p.liked, likes: p.liked ? p.likes - 1 : p.likes + 1 } : p)))
-  }
+  // ── Post handlers ─────────────────────────────────────────────────────────
+  const handlePost = (content) => {
+    const user = { name: "You", initials: "ME", color: "#059669" };
+    setPosts((p) => [{ id: Date.now(), author: user.name, initials: user.initials, time: "Just now", language: "Multiple", color: "#DC4C2A", likes: 0, comments: 0, shares: 0, liked: false, content }, ...p]);
+    notify("Post published! 🎉", "success");
+  };
 
-  function saveGroup(e) {
-    e.preventDefault()
-    if (!groupDraft.name.trim() || !groupDraft.desc.trim() || !groupDraft.language.trim()) {
-      alert('Please fill out all fields.')
-      return
-    }
-    groups.unshift({ id: Date.now(), icon: 'fa-users', name: groupDraft.name, desc: groupDraft.desc, language: groupDraft.language, level: groupDraft.level, members: '1.2k' })
-    setGroupDraft({ name: '', desc: '', language: '', level: 'Beginner' })
-    setShowGroupForm(false)
-    alert('Group created (demo)')
-  }
+  const handleLike = (id) => setPosts((p) => p.map((post) => post.id === id ? { ...post, liked: !post.liked, likes: post.liked ? post.likes - 1 : post.likes + 1 } : post));
 
+  const handleShare = (id) => {
+    setPosts((p) => p.map((post) => post.id === id ? { ...post, shares: post.shares + 1 } : post));
+    notify("Post shared! 📢", "success");
+  };
+
+  // ── Partner handler ───────────────────────────────────────────────────────
+  const handleConnect = (id) => {
+    const partner = partners.find((p) => p.id === id);
+    setPartners((p) => p.map((pt) => pt.id === id ? { ...pt, connected: true } : pt));
+    notify(`Request sent to ${partner?.name}! 📨`, "success");
+  };
+
+  // ── Group handlers ────────────────────────────────────────────────────────
+  const handleCreateGroup = (form) => {
+    const icons = { Spanish: "💬", English: "🎙️", French: "📖", Japanese: "📚", Korean: "🎌", Chinese: "🏮", Arabic: "🌙", German: "🏰", Portuguese: "🎵", Russian: "❄️", Italian: "🍕" };
+    const colors = ["#DC4C2A", "#2563EB", "#7C3AED", "#059669", "#D97706"];
+    setGroups((p) => [{
+      id: Date.now(), name: form.name, icon: icons[form.language] || "👥",
+      description: form.description, members: 1, language: form.language, level: form.level,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      messages: [], membersList: [{ name: "You", initials: "ME", status: "online" }], resources: [], events: [],
+    }, ...p]);
+    notify(`"${form.name}" created! 🎉`, "success");
+  };
+
+  const openGroup = (id) => setActiveGroup(groups.find((g) => g.id === id) || null);
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div id="community-page">
-      <div className="container">
-        <div className="community-header">
-          <h1>Connect & Grow Together</h1>
-          <p>Join thousands of learners in our vibrant community.</p>
-          <div className="community-header-actions">
-            <button className="btn btn-primary" onClick={() => setShowGroupForm((s) => !s)}>Create Group</button>
-            <button className="btn btn-outline">Find Partners</button>
+    <div className="plg-root">
+      <CommunityStyles />
+      <ToastContainer toasts={toasts} />
+
+      <main style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 24px" }}>
+
+        {/* Hero */}
+        <Hero onCreateGroup={() => setShowCreateGroup(true)} onFindPartners={() => notify("Searching for partners... 🤝", "info")} />
+
+        {/* Stats */}
+        <StateGrid postCount={posts.length} groupCount={groups.length} />
+
+        {/* Community Feed */}
+        <Section title="Community Feed" action={<button className="btn-ghost" onClick={() => notify("Feed refreshed!", "success")}>🔄 Refresh</button>}>
+          <PostForm onPost={handlePost} />
+          {posts.map((p) => <PostCard key={p.id} post={p} onLike={handleLike} onShare={handleShare} onComment={(id) => notify(`Comments for post #${id}`, "info")} />)}
+          <div style={{ textAlign: "center", marginTop: 14 }}>
+            <button className="btn-ghost" onClick={() => notify("Loading more posts...", "info")}>⬇ Load More Posts</button>
           </div>
-        </div>
+        </Section>
 
-        {showGroupForm && (
-          <form className="group-form" onSubmit={saveGroup}>
-            <div className="group-form-row">
-              <input value={groupDraft.name} onChange={(e) => setGroupDraft((s) => ({ ...s, name: e.target.value }))} placeholder="Group name" required />
-              <input value={groupDraft.language} onChange={(e) => setGroupDraft((s) => ({ ...s, language: e.target.value }))} placeholder="Language" required />
-            </div>
-            <div className="group-form-row">
-              <select value={groupDraft.level} onChange={(e) => setGroupDraft((s) => ({ ...s, level: e.target.value }))}>
-                <option>Beginner</option>
-                <option>Intermediate</option>
-                <option>Advanced</option>
-              </select>
-              <input value={groupDraft.desc} onChange={(e) => setGroupDraft((s) => ({ ...s, desc: e.target.value }))} placeholder="Description" required />
-            </div>
-            <div style={{ textAlign: 'right' }}><button className="btn btn-primary" type="submit">Save Group</button></div>
-          </form>
-        )}
-
-        <div className="community-feed">
-          <div className="section-header"><h2>Community Feed</h2><button className="btn btn-outline">Refresh</button></div>
-          <div className="post-form">
-            <textarea className="post-input" value={postText} onChange={(e) => setPostText(e.target.value)} placeholder="Share your thoughts..." />
-            <div className="post-actions-row"><button className="btn btn-primary" onClick={handlePost}>Post</button></div>
+        {/* Language Partners */}
+        <Section title="Find Language Partners" action={<button className="btn-ghost" onClick={() => notify("New partners loaded!", "info")}>🔄 Refresh</button>}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 16 }}>
+            {partners.map((p) => <PartnerCard key={p.id} partner={p} onConnect={handleConnect} />)}
           </div>
-          <ul className="community-list">
-            {posts.map((p) => (
-              <li key={p.id}>
-                <div className="post-header">
-                  <div className="post-avatar">{p.initials}</div>
-                  <div>
-                    <div className="post-author">{p.author}</div>
-                    <div className="post-meta">{p.time} · {p.language}</div>
-                  </div>
-                </div>
-                <div className="post-content">{p.content}</div>
-                <div className="post-actions-bar">
-                  <button className={`post-action-btn${p.liked ? ' liked' : ''}`} onClick={() => toggleLike(p.id)}>♥ {p.likes}</button>
-                  <button className="post-action-btn">💬 {p.comments}</button>
-                  <button className="post-action-btn">↗ {p.shares}</button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
+          <div style={{ textAlign: "center", marginTop: 18 }}>
+            <button className="btn-ghost" onClick={() => notify("Finding more partners...", "info")}>👥 Show More Partners</button>
+          </div>
+        </Section>
 
-        <div className="language-partners">
-          <div className="section-header"><h2>Language Partners</h2><button className="btn btn-secondary">Refresh</button></div>
-          <ul className="community-list">
-            {partners.map((p) => (
-              <li key={p.id}>
-                <div className="list-left"><div className="partner-avatar">{p.initials}</div><div><div className="list-label">{p.name}</div><div className="list-note">{p.country} · {p.teaches} → {p.learns}</div></div></div>
-                <button className="list-action">Connect</button>
-              </li>
-            ))}
-          </ul>
-        </div>
+        {/* Study Groups */}
+        <Section title="Join Study Groups" action={<button className="btn-coral" onClick={() => setShowCreateGroup(true)}>＋ Create Group</button>}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {groups.map((g) => <GroupRow key={g.id} group={g} onOpen={openGroup} />)}
+          </div>
+          <div style={{ textAlign: "center", marginTop: 18 }}>
+            <button className="btn-ghost" onClick={() => notify("Browsing all groups...", "info")}>🔍 Browse All Groups</button>
+          </div>
+        </Section>
 
-        <div className="study-groups">
-          <div className="section-header"><h2>Study Groups</h2></div>
-          <ul className="community-list">
-            {groups.map((g) => (
-              <li key={g.id}>
-                <div className="list-left"><div className="group-icon"><i className={`fas ${g.icon}`} /></div><div><div className="list-label">{g.name}</div><div className="list-note">{g.desc}</div></div></div>
-                <div><div className="list-note">{g.language} · {g.level}</div><button className="list-action">Join</button></div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
+      </main>
+
+      {/* Floating Action Button */}
+      <button className="btn-coral" onClick={() => setShowCreateGroup(true)} style={{
+        position: "fixed", bottom: 26, right: 26, width: 54, height: 54,
+        borderRadius: "50%", padding: 0, fontSize: 22, justifyContent: "center",
+        boxShadow: "0 8px 24px rgba(220,76,42,.4)", zIndex: 400,
+      }}>＋</button>
+
+      {/* Modals & Overlays */}
+      {showCreateGroup && <CreateGroupModel onClose={() => setShowCreateGroup(false)} onCreate={handleCreateGroup} />}
+      {activeGroup     && <GroupInterface   group={activeGroup} onClose={() => setActiveGroup(null)} notify={notify} />}
     </div>
-  )
+  );
 }
