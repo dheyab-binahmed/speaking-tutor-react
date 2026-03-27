@@ -15,6 +15,7 @@ import GrammarStep from './pages/Assessment/GrammarStep'
 import ReadingStep from './pages/Assessment/ReadingStep'
 import ResultsStep from './pages/Assessment/ResultsStep'
 
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -28,9 +29,7 @@ export default function App() {
         <Route path="/profile" element={<ProfilePage />} />
 
         <Route path="/assessment" element={<AssessmentPage />}>
-          {/* ✅ FIXED HERE */}
           <Route index element={<Navigate to="/assessment/language" replace />} />
-
           <Route path="language" element={<LanguageStep />} />
           <Route path="pronunciation" element={<PronunciationStep />} />
           <Route path="speaking" element={<SpeakingStep />} />
