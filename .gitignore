@@ -38,3 +38,7 @@ build
 
 # IDE
 .eslintcache
+
+*.local.json
+secrets.json
+config/*.json
