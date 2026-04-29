@@ -98,12 +98,15 @@ export default function PracticePage() {
   );
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [stats, setStats] = useState({});
 
   // Fetch practice data from backend
   useEffect(() => {
     const fetchPracticeData = async () => {
       try {
         setLoading(true);
+        setError(null);
         // Fetch all prompt types from backend
         const prompts = await PromptService.getPrompts();
 
@@ -122,10 +125,40 @@ export default function PracticePage() {
           if (flashcard_prompts.length > 0) setFlashcards(flashcard_prompts);
           if (grammar_prompts.length > 0) setGrammarExercises(grammar_prompts);
           if (reading_prompts.length > 0) setReadingQuestions(reading_prompts);
+
+          // Update categories with real data
+          setCategories((prev) =>
+            prev.map((cat) => {
+              switch (cat.id) {
+                case "flashcards":
+                  return {
+                    ...cat,
+                    s1: String(flashcard_prompts.length),
+                    l1: "Available",
+                  };
+                case "grammar":
+                  return {
+                    ...cat,
+                    s1: String(grammar_prompts.length),
+                    l1: "Exercises",
+                  };
+                case "reading":
+                  return {
+                    ...cat,
+                    s1: String(reading_prompts.length),
+                    l1: "Articles",
+                  };
+                default:
+                  return cat;
+              }
+            }),
+          );
         }
       } catch (err) {
         console.error("Error fetching practice data:", err);
-        // Use defaults on error
+        setError(
+          err.message || "Failed to load practice exercises. Using defaults.",
+        );
       } finally {
         setLoading(false);
       }
@@ -237,6 +270,22 @@ export default function PracticePage() {
   return (
     <div id="practice-page">
       <div className="container">
+        {error && (
+          <div
+            style={{
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
+              color: "#dc2626",
+              padding: "1rem",
+              borderRadius: "8px",
+              marginBottom: "1.5rem",
+              fontSize: "0.9rem",
+            }}
+          >
+            ⚠️ {error}
+          </div>
+        )}
+
         {/* CATEGORY CARDS */}
         <div className="practice-categories">
           {loading ? (

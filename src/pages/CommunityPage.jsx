@@ -23,6 +23,9 @@ import GroupRow from "../components/components/groups/GroupRow";
 import CreateGroupModel from "../components/components/groups/CreateGroupModel";
 import GroupInterface from "../components/components/groups/GroupInterface";
 
+// ── Services ──────────────────────────────────────────────────────────────
+import CommunityService from "../services/communityService";
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function CommunityPage() {
@@ -33,25 +36,31 @@ export default function CommunityPage() {
   const [activeGroup, setActiveGroup] = useState(null);
   const [toasts, setToasts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Fetch community data from backend
   useEffect(() => {
     const fetchCommunityData = async () => {
       try {
-        // TODO: Fetch from backend API endpoints
-        // const postsData = await CommunityService.getPosts();
-        // const groupsData = await CommunityService.getGroups();
-        // const partnersData = await CommunityService.getPartners();
-        // setPosts(postsData);
-        // setGroups(groupsData);
-        // setPartners(partnersData);
+        setLoading(true);
+        setError(null);
 
-        // For now, initialize as empty - backend integration coming soon
-        setPosts([]);
-        setGroups([]);
-        setPartners([]);
+        // Fetch all community data in parallel
+        const [postsData, groupsData, partnersData] = await Promise.all([
+          CommunityService.getPosts(),
+          CommunityService.getGroups(),
+          CommunityService.getPartners(),
+        ]);
+
+        setPosts(Array.isArray(postsData) ? postsData : []);
+        setGroups(Array.isArray(groupsData) ? groupsData : []);
+        setPartners(Array.isArray(partnersData) ? partnersData : []);
       } catch (err) {
         console.error("Error fetching community data:", err);
+        setError(
+          err.message ||
+            "Failed to load community data. Some features may be unavailable.",
+        );
       } finally {
         setLoading(false);
       }
@@ -163,6 +172,22 @@ export default function CommunityPage() {
     <div className="plg-root">
       <CommunityStyles />
       <ToastContainer toasts={toasts} />
+
+      {error && (
+        <div
+          style={{
+            background: "#fef2f2",
+            border: "1px solid #fecaca",
+            color: "#dc2626",
+            padding: "1rem",
+            margin: "1rem",
+            borderRadius: "8px",
+            fontSize: "0.9rem",
+          }}
+        >
+          ⚠️ {error}
+        </div>
+      )}
 
       <main style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 24px" }}>
         {/* Hero */}

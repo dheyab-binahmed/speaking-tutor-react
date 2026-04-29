@@ -8,12 +8,20 @@ class AuthService {
   /**
    * Register a new user
    */
-  async register(email, password, fullName) {
+  async register(
+    email,
+    password,
+    fullName,
+    selectedLevel = null,
+    preferredLanguage = null,
+  ) {
     try {
       const response = await apiClient.post("/auth/register", {
         email,
         password,
         full_name: fullName,
+        selected_level: selectedLevel,
+        preferred_language: preferredLanguage,
       });
       return response.data;
     } catch (error) {

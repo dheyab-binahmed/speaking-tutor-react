@@ -17,6 +17,23 @@ class SessionService {
   }
 
   /**
+   * Get backend-generated content for an assessment step
+   */
+  async getAssessmentContent(stepType, filters = {}) {
+    try {
+      const response = await apiClient.get("/assessment/content", {
+        params: {
+          step_type: stepType,
+          ...filters,
+        },
+      });
+      return response.data;
+    } catch (error) {
+      throw this._handleError(error);
+    }
+  }
+
+  /**
    * Get session details
    */
   async getSession(sessionId) {
@@ -83,6 +100,36 @@ class SessionService {
     try {
       const response = await apiClient.post(
         `/sessions/${sessionId}/start-recording`,
+      );
+      return response.data;
+    } catch (error) {
+      throw this._handleError(error);
+    }
+  }
+
+  /**
+   * Submit assessment results
+   */
+  async submitAssessmentResults(sessionId, results = {}) {
+    try {
+      const response = await apiClient.post(
+        `/sessions/${sessionId}/submit-results`,
+        results,
+      );
+      return response.data;
+    } catch (error) {
+      throw this._handleError(error);
+    }
+  }
+
+  /**
+   * Update assessment score
+   */
+  async updateAssessmentScore(sessionId, scoreData = {}) {
+    try {
+      const response = await apiClient.put(
+        `/sessions/${sessionId}/score`,
+        scoreData,
       );
       return response.data;
     } catch (error) {

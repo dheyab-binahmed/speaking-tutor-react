@@ -1,14 +1,22 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAssessment } from "./assessmentContext";
-import PromptService from "../../services/promptService";
+import SessionService from "../../services/sessionService";
+import AudioService from "../../services/audioService";
+import AudioRecorder from "../../utils/audioRecorder";
 
 export default function PronunciationStep() {
-  const { update, goNext, goPrev } = useAssessment();
-  const [recording, setRecording] = useState(false);
-  const [time, setTime] = useState(0);
-  const [prompt, setPrompt] = useState("Loading pronunciation prompt...");
+  const { data, update, goNext, goPrev } = useAssessment();
+  const recorderRef = useRef(new AudioRecorder());
   const timer = useRef(null);
   const bars = useRef([]);
+  const [recording, setRecording] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState(null);
+  const [time, setTime] = useState(0);
+  const [prompt, setPrompt] = useState("Loading pronunciation prompt...");
+  const [analysis, setAnalysis] = useState(null);
+
   const fmt = (s) =>
     `${Math.floor(s / 60)
       .toString()
@@ -17,60 +25,129 @@ export default function PronunciationStep() {
   useEffect(() => {
     const loadPrompt = async () => {
       try {
-        const prompts = await PromptService.getPrompts({
-          test_type: "pronunciation_drill",
-        });
-        const selected =
-          Array.isArray(prompts) && prompts.length > 0 ? prompts[0] : null;
+        setLoading(true);
+        setError(null);
+        const response =
+          await SessionService.getAssessmentContent("pronunciation");
         setPrompt(
-          selected?.reference_text ||
-            selected?.title ||
+          response?.prompt?.reference_text ||
+            response?.prompt?.title ||
             "Read the prompt aloud.",
         );
       } catch (err) {
         setPrompt("Read the prompt aloud.");
+        setError(err.message || "Failed to load pronunciation prompt.");
+      } finally {
+        setLoading(false);
       }
     };
 
     loadPrompt();
   }, []);
 
-  function start() {
-    setRecording(true);
-    let s = 0;
-    timer.current = setInterval(() => {
-      s++;
-      setTime(s);
-      bars.current.forEach((b) => {
-        if (b) b.style.height = `${Math.random() * 80 + 10}px`;
-      });
-      if (s >= 30) stop();
-    }, 1000);
+  const resetVisualizer = () => {
+    bars.current.forEach((bar) => {
+      if (bar) bar.style.height = "4px";
+    });
+  };
+
+  async function start() {
+    if (!AudioRecorder.isSupported()) {
+      setError("Your browser does not support microphone recording.");
+      return;
+    }
+
+    try {
+      setError(null);
+      setAnalysis(null);
+      setRecording(true);
+      setTime(0);
+      await recorderRef.current.startRecording();
+
+      let elapsed = 0;
+      timer.current = setInterval(() => {
+        elapsed += 1;
+        setTime(elapsed);
+        bars.current.forEach((bar) => {
+          if (bar) bar.style.height = `${Math.random() * 80 + 10}px`;
+        });
+        if (elapsed >= 30) {
+          stop();
+        }
+      }, 1000);
+    } catch (err) {
+      setRecording(false);
+      setError(err.message || "Failed to start recording.");
+    }
   }
-  function stop() {
+
+  async function stop() {
     clearInterval(timer.current);
     setRecording(false);
-    bars.current.forEach((b) => {
-      if (b) b.style.height = "4px";
-    });
+    resetVisualizer();
+
+    try {
+      setUploading(true);
+      const blob = await recorderRef.current.stopRecording();
+      const wavBlob = await AudioRecorder.blobToWav(blob);
+      const response = await AudioService.uploadAudio(
+        data.sessionId,
+        wavBlob,
+        "pronunciation.wav",
+      );
+
+      const pronunciationScore =
+        response?.analysis?.scores?.accuracy_score ??
+        response?.analysis?.scores?.overall_score ??
+        response?.evaluation?.pronunciation_score ??
+        0;
+
+      setAnalysis(response?.analysis || null);
+      update({ pronunciationScore, pronunciationAnalysis: response });
+    } catch (err) {
+      setError(err.message || "Failed to upload recording for analysis.");
+    } finally {
+      setUploading(false);
+    }
   }
+
   function cont() {
-    update({ pronunciationScore: Math.floor(Math.random() * 3) + 7 });
+    if (!analysis && !uploading) {
+      setError("Please record and upload your pronunciation first.");
+      return;
+    }
     goNext("pronunciation");
   }
 
   return (
     <div className="test-container fade-in" style={{ margin: "2rem auto" }}>
+      {error && (
+        <div
+          style={{
+            background: "#fee2e2",
+            border: "1px solid #fecaca",
+            color: "#dc2626",
+            padding: "1rem",
+            borderRadius: "8px",
+            marginBottom: "1rem",
+          }}
+        >
+          ⚠️ {error}
+        </div>
+      )}
+
       <div className="test-header">
         <h2>Pronunciation Assessment</h2>
         <p>
-          Read the following sentences aloud. We'll analyze your pronunciation
-          accuracy.
+          Read the backend-generated prompt aloud. Your recording is uploaded
+          and analyzed on the server.
         </p>
       </div>
       <div className="test-content">
         <div className="speaking-test">
-          <div className="speaking-prompt">"{prompt}"</div>
+          <div className="speaking-prompt">
+            "{loading ? "Loading prompt..." : prompt}"
+          </div>
           <div className="recording-section">
             <div className="recording-visualizer" id="pronunciationVisualizer">
               {Array.from({ length: 30 }).map((_, i) => (
@@ -89,6 +166,7 @@ export default function PronunciationStep() {
               <button
                 className={`record-btn${recording ? " recording" : ""}`}
                 onClick={recording ? stop : start}
+                disabled={loading || uploading}
               >
                 <i
                   className={`fas ${recording ? "fa-stop" : "fa-microphone"}`}
@@ -102,10 +180,26 @@ export default function PronunciationStep() {
                 textAlign: "center",
               }}
             >
-              {recording
-                ? "Recording... click stop when done."
-                : "Speak clearly into your microphone. Try to pronounce each word accurately."}
+              {uploading
+                ? "Uploading and analyzing your pronunciation..."
+                : recording
+                  ? "Recording... click stop when done."
+                  : "Speak clearly into your microphone. Try to pronounce each word accurately."}
             </p>
+            {analysis && (
+              <div
+                className="grade-box"
+                style={{ marginTop: "1rem", textAlign: "center" }}
+              >
+                <strong>Pronunciation score:</strong>{" "}
+                {Math.round(
+                  analysis?.scores?.overall_score ??
+                    analysis?.scores?.accuracy_score ??
+                    0,
+                )}
+                /100
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -116,7 +210,7 @@ export default function PronunciationStep() {
         >
           <i className="fas fa-arrow-left" /> Back
         </button>
-        <button className="btn btn-primary" onClick={cont}>
+        <button className="btn btn-primary" onClick={cont} disabled={uploading}>
           Continue to Speaking Test <i className="fas fa-arrow-right" />
         </button>
       </div>

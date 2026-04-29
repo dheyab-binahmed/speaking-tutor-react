@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import SessionService from "../services/sessionService";
 
-// Weekly chart data – fetched from backend
+// Weekly chart default data – fallback if fetch fails
 const defaultWeekData = [
   { day: "Mon", minutes: 0 },
   { day: "Tue", minutes: 0 },
@@ -72,33 +72,156 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
+  // State for fetched data
+  const [weekData, setWeekData] = useState(defaultWeekData);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [stats, setStats] = useState({
+    overallProgress: 0,
+    todayPractice: 0,
+    dailyGoalProgress: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
   const firstName = user?.name ? user.name.split(" ")[0] : "Learner";
   const language = user?.preferredLanguage || "your language";
   const level = user?.assessmentResults?.level || "Beginner";
   const overall = user?.assessmentResults?.overall || 0;
+
+  // Fetch dashboard data from backend
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Fetch progress history and stats
+        const [historyData, statsData] = await Promise.all([
+          SessionService.getProgressHistory({ days: 7 }),
+          SessionService.getProgressStats(),
+        ]);
+
+        // Transform history data to week chart format
+        if (historyData?.sessions) {
+          const last7Days = [];
+          const today = new Date();
+          const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+          for (let i = 6; i >= 0; i--) {
+            const date = new Date(today);
+            date.setDate(date.getDate() - i);
+            const dayIndex = date.getDay();
+            const dayName = daysOfWeek[dayIndex];
+
+            // Find sessions for this day
+            const dayMinutes = (historyData.sessions || [])
+              .filter((session) => {
+                const sessionDate = new Date(session.created_at);
+                return sessionDate.toDateString() === date.toDateString();
+              })
+              .reduce(
+                (sum, session) => sum + (session.duration_minutes || 0),
+                0,
+              );
+
+            last7Days.push({ day: dayName, minutes: dayMinutes });
+          }
+          setWeekData(last7Days);
+        }
+
+        // Update stats
+        if (statsData) {
+          setStats({
+            overallProgress: statsData.overall_score || 0,
+            todayPractice: statsData.today_minutes || 0,
+            dailyGoalProgress: Math.min(
+              100,
+              ((statsData.today_minutes || 0) / 30) * 100,
+            ),
+          });
+        }
+
+        // Fetch or construct leaderboard
+        const leaderboardData = [];
+        if (historyData?.user_ranking) {
+          // If backend provides ranking
+          const ranking = historyData.user_ranking;
+          leaderboardData.push(
+            {
+              rank: ranking.rank || 1,
+              name: `${firstName} (You)`,
+              pts: String(ranking.total_points || 0),
+              medal: null,
+              isUser: true,
+            },
+            ...((ranking.top_users || []).map((u, idx) => ({
+              rank: idx + 1,
+              name: u.name || `User ${idx + 1}`,
+              pts: String(u.total_points || 0),
+              medal:
+                idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : null,
+            })) || []),
+          );
+        } else {
+          // Fallback leaderboard if not provided
+          leaderboardData.push(
+            {
+              rank: 1,
+              name: "Top Learner",
+              pts: "9,845",
+              medal: "🥇",
+            },
+            {
+              rank: 2,
+              name: "High Performer",
+              pts: "9,120",
+              medal: "🥈",
+            },
+            {
+              rank: 3,
+              name: "Consistent Learner",
+              pts: "8,755",
+              medal: "🥉",
+            },
+            {
+              rank: 4,
+              name: `${firstName} (You)`,
+              pts: String(user?.total_points || "7,980"),
+              medal: null,
+              isUser: true,
+            },
+            {
+              rank: 5,
+              name: "Active Member",
+              pts: "7,430",
+              medal: null,
+            },
+          );
+        }
+        setLeaderboard(leaderboardData);
+      } catch (err) {
+        console.error("Error fetching dashboard data:", err);
+        setError(err.message || "Failed to load dashboard data");
+        // Keep using default data on error
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user?.id) {
+      fetchDashboardData();
+    }
+  }, [user?.id, firstName]);
+
   const maxMinutes = useMemo(
-    () => Math.max(...weekData.map((d) => d.minutes)),
-    [],
+    () => Math.max(...weekData.map((d) => d.minutes), 1),
+    [weekData],
   );
   const totalMinutes = useMemo(
     () => weekData.reduce((a, b) => a + b.minutes, 0),
-    [],
+    [weekData],
   );
   const totalHours = `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
-
-  const leaderboard = [
-    { rank: 1, name: "Alex Johnson", pts: "9,845", medal: "🥇" },
-    { rank: 2, name: "Maria Garcia", pts: "9,120", medal: "🥈" },
-    { rank: 3, name: "James Wilson", pts: "8,755", medal: "🥉" },
-    {
-      rank: 4,
-      name: firstName + " (You)",
-      pts: "7,980",
-      medal: null,
-      isUser: true,
-    },
-    { rank: 5, name: "Sarah Chen", pts: "7,430", medal: null },
-  ];
 
   return (
     <div
@@ -109,6 +232,21 @@ export default function DashboardPage() {
         paddingBottom: "3rem",
       }}
     >
+      {error && (
+        <div
+          style={{
+            background: "#fee2e2",
+            border: "1px solid #fecaca",
+            color: "#dc2626",
+            padding: "1rem",
+            margin: "1rem",
+            borderRadius: "8px",
+            fontSize: "0.9rem",
+          }}
+        >
+          ⚠️ {error}
+        </div>
+      )}
       <div className="container">
         {/* ── Header ── */}
         <div
@@ -173,25 +311,25 @@ export default function DashboardPage() {
           {[
             {
               icon: "fa-trophy",
-              value: "87%",
+              value: `${Math.round(stats.overallProgress)}%`,
               label: "Overall Progress",
               grad: "linear-gradient(135deg,#6366f1,#8b5cf6)",
             },
             {
               icon: "fa-fire",
-              value: `${user?.streak || 14}`,
+              value: `${user?.streak || 0}`,
               label: "Day Streak",
               grad: "linear-gradient(135deg,#10b981,#34d399)",
             },
             {
               icon: "fa-clock",
-              value: "45m",
+              value: `${Math.round(stats.todayPractice)}m`,
               label: "Today's Practice",
               grad: "linear-gradient(135deg,#f59e0b,#fbbf24)",
             },
             {
               icon: "fa-star",
-              value: `${user?.achievements || 8}`,
+              value: `${user?.achievements || 0}`,
               label: "Achievements",
               grad: "linear-gradient(135deg,#3b82f6,#60a5fa)",
             },
@@ -207,6 +345,7 @@ export default function DashboardPage() {
                 alignItems: "center",
                 gap: "1rem",
                 transition: "transform 0.2s, box-shadow 0.2s",
+                opacity: loading ? 0.6 : 1,
               }}
               onMouseOver={(e) => {
                 e.currentTarget.style.transform = "translateY(-3px)";
@@ -242,7 +381,7 @@ export default function DashboardPage() {
                     lineHeight: 1,
                   }}
                 >
-                  {card.value}
+                  {loading ? "..." : card.value}
                 </div>
                 <div
                   style={{
@@ -337,7 +476,7 @@ export default function DashboardPage() {
                     fontWeight: 700,
                   }}
                 >
-                  75%
+                  {Math.round(stats.dailyGoalProgress)}%
                 </span>
               </div>
               <div
@@ -350,10 +489,11 @@ export default function DashboardPage() {
               >
                 <div
                   style={{
-                    width: "75%",
+                    width: `${Math.min(stats.dailyGoalProgress, 100)}%`,
                     height: "100%",
                     background: "linear-gradient(90deg,#6366f1,#8b5cf6)",
                     borderRadius: "99px",
+                    transition: "width 0.3s ease",
                   }}
                 />
               </div>
@@ -364,7 +504,7 @@ export default function DashboardPage() {
                   marginTop: "0.5rem",
                 }}
               >
-                22 of 30 minutes completed
+                {Math.round(stats.todayPractice)} of 30 minutes completed
               </p>
             </div>
 
@@ -607,66 +747,90 @@ export default function DashboardPage() {
             </button>
           </div>
           <div style={{ display: "grid", gap: "0.5rem" }}>
-            {leaderboard.map((item) => (
+            {loading ? (
               <div
-                key={item.rank}
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.875rem",
-                  padding: "0.875rem 1rem",
-                  borderRadius: "12px",
-                  background: item.isUser ? "rgba(99,102,241,0.06)" : "#f8fafc",
-                  border: item.isUser
-                    ? "1.5px solid rgba(99,102,241,0.2)"
-                    : "1.5px solid transparent",
+                  textAlign: "center",
+                  padding: "2rem",
+                  color: "#9ca3af",
                 }}
               >
+                Loading leaderboard...
+              </div>
+            ) : leaderboard.length === 0 ? (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "2rem",
+                  color: "#9ca3af",
+                }}
+              >
+                No leaderboard data available
+              </div>
+            ) : (
+              leaderboard.map((item) => (
                 <div
+                  key={item.rank}
                   style={{
-                    width: "32px",
-                    height: "32px",
-                    borderRadius: "50%",
-                    flexShrink: 0,
-                    background:
-                      item.rank === 1
-                        ? "#fef3c7"
-                        : item.rank === 2
-                          ? "#f1f5f9"
-                          : item.rank === 3
-                            ? "#fde8d0"
-                            : "#f1f5f9",
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: item.medal ? "1rem" : "0.8rem",
-                    fontWeight: 800,
-                    color: "#374151",
+                    gap: "0.875rem",
+                    padding: "0.875rem 1rem",
+                    borderRadius: "12px",
+                    background: item.isUser
+                      ? "rgba(99,102,241,0.06)"
+                      : "#f8fafc",
+                    border: item.isUser
+                      ? "1.5px solid rgba(99,102,241,0.2)"
+                      : "1.5px solid transparent",
                   }}
                 >
-                  {item.medal || item.rank}
+                  <div
+                    style={{
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "50%",
+                      flexShrink: 0,
+                      background:
+                        item.rank === 1
+                          ? "#fef3c7"
+                          : item.rank === 2
+                            ? "#f1f5f9"
+                            : item.rank === 3
+                              ? "#fde8d0"
+                              : "#f1f5f9",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: item.medal ? "1rem" : "0.8rem",
+                      fontWeight: 800,
+                      color: "#374151",
+                    }}
+                  >
+                    {item.medal || item.rank}
+                  </div>
+                  <span
+                    style={{
+                      flex: 1,
+                      fontWeight: item.isUser ? 800 : 500,
+                      color: item.isUser ? "#6366f1" : "#374151",
+                      fontSize: "0.92rem",
+                    }}
+                  >
+                    {item.name}
+                  </span>
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      color: "#6366f1",
+                      fontSize: "0.9rem",
+                    }}
+                  >
+                    {item.pts} pts
+                  </span>
                 </div>
-                <span
-                  style={{
-                    flex: 1,
-                    fontWeight: item.isUser ? 800 : 500,
-                    color: item.isUser ? "#6366f1" : "#374151",
-                    fontSize: "0.92rem",
-                  }}
-                >
-                  {item.name}
-                </span>
-                <span
-                  style={{
-                    fontWeight: 700,
-                    color: "#6366f1",
-                    fontSize: "0.9rem",
-                  }}
-                >
-                  {item.pts} pts
-                </span>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>

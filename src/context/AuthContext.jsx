@@ -46,11 +46,18 @@ export function AuthProvider({ children }) {
     age,
     password,
     preferredLanguage,
+    selectedLevel,
   }) => {
     try {
       setError(null);
       // First register the user
-      const registerData = await AuthService.register(email, password, name);
+      const registerData = await AuthService.register(
+        email,
+        password,
+        name,
+        selectedLevel,
+        preferredLanguage,
+      );
 
       // Then login automatically
       const userData = await AuthService.login(email, password);

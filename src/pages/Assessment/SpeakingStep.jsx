@@ -1,22 +1,25 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAssessment } from "./assessmentContext";
-import PromptService from "../../services/promptService";
+import SessionService from "../../services/sessionService";
 
 export default function SpeakingStep() {
   const { data, update, goNext, goPrev } = useAssessment();
   const languageName = data.language ? data.language.toUpperCase() : "ENGLISH";
-  const fallbackTopic = "your speaking practice topic";
-  const fallbackPrompt = `AI: Hi! Let's practice speaking in ${languageName}. Please talk about ${fallbackTopic}.`;
-
-  const [topic, setTopic] = useState(fallbackTopic);
-
-  // Chat state
-  const [messages, setMessages] = useState([
-    { role: "ai", text: fallbackPrompt },
-  ]);
+  const [conversation, setConversation] = useState({
+    topic: "your speaking practice topic",
+    opening_prompt: `Let's practice speaking in ${languageName}.`,
+    follow_up_prompts: [],
+    closing_prompt: "Thanks for sharing your ideas.",
+  });
+  const [topic, setTopic] = useState("your speaking practice topic");
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [score, setScore] = useState(null);
   const [recording, setRecording] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [aiTurnIndex, setAiTurnIndex] = useState(0);
 
   const speakText = (text) => {
     if (!("speechSynthesis" in window)) return;
@@ -34,17 +37,21 @@ export default function SpeakingStep() {
     const trimmed = (spokenText ?? input).trim();
     if (!trimmed) return;
 
-    const aiResponse = "Great response! Keep speaking clearly and naturally.";
+    const nextPrompt =
+      conversation.follow_up_prompts[aiTurnIndex] ||
+      conversation.closing_prompt ||
+      "Great response! Keep speaking clearly and naturally.";
+
     setMessages((prev) => [
       ...prev,
       { role: "user", text: trimmed },
-      { role: "ai", text: `AI: ${aiResponse}` },
+      { role: "ai", text: `AI: ${nextPrompt}` },
     ]);
-    speakText(aiResponse);
+    setAiTurnIndex((current) => current + 1);
+    speakText(nextPrompt);
     setInput("");
   };
 
-  // Start typing / speech recognition input
   const startSpeechRecognition = () => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -72,33 +79,68 @@ export default function SpeakingStep() {
     recognition.start();
   };
 
-  const gradeConversation = () => {
-    const userCount = messages.filter((m) => m.role === "user").length;
-    const generatedScore = Math.min(10, Math.max(4, 5 + userCount));
-    setScore(generatedScore);
-    update({ fluencyScore: generatedScore });
+  const gradeConversation = async () => {
+    try {
+      setSubmitting(true);
+      setError(null);
+
+      const userCount = messages.filter((m) => m.role === "user").length;
+      const transcript = messages.map((m) => `${m.role}: ${m.text}`).join("\n");
+      const response = await SessionService.updateAssessmentScore(
+        data.sessionId,
+        {
+          test_type: "speaking",
+          transcript,
+          message_count: userCount,
+        },
+      );
+
+      const nextScore =
+        response?.result?.score ?? response?.evaluation?.fluency_score ?? 0;
+      setScore(nextScore);
+      update({
+        fluencyScore: response?.evaluation?.fluency_score ?? nextScore,
+        speakingResult: response,
+      });
+      return true;
+    } catch (err) {
+      console.error("Error grading conversation:", err);
+      setError("Failed to grade speaking. Please try again.");
+      return false;
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // Speak first AI prompt when component mounts
   useEffect(() => {
     const loadPrompt = async () => {
       try {
-        const prompts = await PromptService.getPrompts({
-          test_type: "speaking_practice",
-        });
-        const selectedPrompt =
-          Array.isArray(prompts) && prompts.length > 0 ? prompts[0] : null;
-        const nextTopic =
-          selectedPrompt?.reference_text ||
-          selectedPrompt?.title ||
-          fallbackTopic;
-        const nextPrompt = `AI: Hi! Let's practice speaking in ${languageName}. Please talk about ${nextTopic}.`;
+        setLoading(true);
+        const content = await SessionService.getAssessmentContent("speaking");
+        const nextTopic = content?.topic || conversation.topic;
+        const openingPrompt =
+          content?.opening_prompt ||
+          `Let's practice speaking in ${languageName}. Please share your thoughts.`;
 
         setTopic(nextTopic);
-        setMessages([{ role: "ai", text: nextPrompt }]);
-        speakText(nextPrompt.replace(/^AI:\s*/, ""));
+        setConversation(
+          content || {
+            topic: nextTopic,
+            opening_prompt: openingPrompt,
+            follow_up_prompts: [],
+            closing_prompt: "Thanks for sharing your ideas.",
+          },
+        );
+        setMessages([{ role: "ai", text: `AI: ${openingPrompt}` }]);
+        setAiTurnIndex(0);
+        speakText(openingPrompt);
       } catch (err) {
-        speakText(fallbackPrompt.replace(/^AI:\s*/, ""));
+        const fallbackPrompt = `Let's practice speaking in ${languageName}. Please share your thoughts.`;
+        setMessages([{ role: "ai", text: `AI: ${fallbackPrompt}` }]);
+        speakText(fallbackPrompt);
+        setError(err.message || "Failed to load speaking content.");
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -106,14 +148,17 @@ export default function SpeakingStep() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [languageName]);
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     const userMessages = messages.filter((m) => m.role === "user").length;
     if (userMessages === 0) {
       alert("Please respond at least once before continuing.");
       return;
     }
-    gradeConversation();
-    setTimeout(() => goNext("speaking"), 350);
+
+    const graded = await gradeConversation();
+    if (graded) {
+      goNext("speaking");
+    }
   };
 
   return (
@@ -121,11 +166,26 @@ export default function SpeakingStep() {
       className="test-container fade-in"
       style={{ margin: "2rem auto", maxWidth: 920 }}
     >
+      {error && (
+        <div
+          style={{
+            background: "#fee2e2",
+            border: "1px solid #fecaca",
+            color: "#dc2626",
+            padding: "1rem",
+            borderRadius: "8px",
+            marginBottom: "1rem",
+          }}
+        >
+          ⚠️ {error}
+        </div>
+      )}
+
       <div className="test-header">
         <h2>AI Speaking Conversation ({languageName})</h2>
         <p>
-          AI starts with a backend prompt and you reply. Your responses are
-          graded automatically.
+          The backend generates the conversation topic and follow-up prompts.
+          Your responses are graded automatically.
         </p>
       </div>
 
@@ -146,6 +206,9 @@ export default function SpeakingStep() {
               <div>{msg.text}</div>
             </div>
           ))}
+          {loading && (
+            <p style={{ color: "#6b7280" }}>Loading speaking content...</p>
+          )}
         </div>
 
         <div className="chat-input-row">
@@ -165,19 +228,27 @@ export default function SpeakingStep() {
           <button
             className="btn btn-secondary"
             onClick={startSpeechRecognition}
-            disabled={recording}
+            disabled={recording || loading}
           >
             {recording ? "Listening..." : "Speak Now"}
           </button>
-          <button className="btn btn-outline" onClick={handleContinue}>
-            Grade & Continue
+          <button
+            className="btn btn-primary"
+            onClick={handleContinue}
+            disabled={submitting || loading}
+          >
+            {submitting ? "Grading..." : "Grade & Continue"}
           </button>
         </div>
 
         {score !== null && (
           <div className="grade-box">
-            <strong>Speaking Grade:</strong> {score}/10 —{" "}
-            {score >= 8 ? "Excellent" : score >= 6 ? "Good" : "Needs Practice"}
+            <strong>Speaking Grade:</strong> {Math.round(score)}/100 —{" "}
+            {score >= 80
+              ? "Excellent"
+              : score >= 60
+                ? "Good"
+                : "Needs Practice"}
           </div>
         )}
       </div>
