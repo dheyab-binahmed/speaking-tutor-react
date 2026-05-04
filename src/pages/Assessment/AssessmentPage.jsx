@@ -7,7 +7,7 @@ import { useAuth } from "../../context/AuthContext";
 const STEPS = [
   { path: "language", label: "Language" },
   { path: "pronunciation", label: "Pronunciation" },
-  { path: "speaking", label: "Speaking" },
+  { path: "writing", label: "Writing" },
   { path: "grammar", label: "Grammar" },
   { path: "reading", label: "Reading" },
   { path: "results", label: "Results" },
@@ -21,6 +21,7 @@ export default function AssessmentPage() {
     language: null,
     pronunciationScore: 0,
     fluencyScore: 0,
+    writingScore: 0,
     grammarScore: 0,
     grammarTotal: 5,
     readingScore: 0,

@@ -21,12 +21,30 @@ class SessionService {
    */
   async getAssessmentContent(stepType, filters = {}) {
     try {
+      // include any cached session_id so the backend can return the same prompt
+      const cachedSessionId = localStorage.getItem("assessment_session_id");
+      const params = {
+        step_type: stepType,
+        ...(cachedSessionId ? { session_id: cachedSessionId } : {}),
+        ...filters,
+      };
+
       const response = await apiClient.get("/assessment/content", {
-        params: {
-          step_type: stepType,
-          ...filters,
-        },
+        params,
       });
+
+      // persist session_id returned by server so prompts stay stable for the session
+      if (response?.data?.session_id) {
+        try {
+          localStorage.setItem(
+            "assessment_session_id",
+            response.data.session_id,
+          );
+        } catch (err) {
+          // ignore storage errors
+        }
+      }
+
       return response.data;
     } catch (error) {
       throw this._handleError(error);

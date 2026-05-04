@@ -102,9 +102,10 @@ export default function ResultsStep() {
     componentScores.reading ??
     data.readingScore ??
     0;
+  const writing = componentScores.writing ?? data.writingScore ?? 0;
   const overall =
     results?.overall_score ??
-    Math.round((pronunciation + fluency + grammar + reading) / 4);
+    Math.round((pronunciation + fluency + grammar + reading + writing) / 5);
   const level =
     results?.proficiency_level ||
     (overall >= 80
@@ -134,9 +135,9 @@ export default function ResultsStep() {
       color: "#8b5cf6",
     },
     {
-      label: "Speaking Fluency",
-      value: fluency,
-      icon: "fa-comments",
+      label: "Writing",
+      value: writing || fluency,
+      icon: "fa-pen",
       color: "#10b981",
     },
     { label: "Grammar", value: grammar, icon: "fa-book", color: "#f59e0b" },

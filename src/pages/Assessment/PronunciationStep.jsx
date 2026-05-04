@@ -16,6 +16,10 @@ export default function PronunciationStep() {
   const [time, setTime] = useState(0);
   const [prompt, setPrompt] = useState("Loading pronunciation prompt...");
   const [analysis, setAnalysis] = useState(null);
+  const [livePreview, setLivePreview] = useState("");
+  const promptWordsRef = useRef([]);
+  const recognitionRef = useRef(null);
+  const spokenWordsRef = useRef([]);
 
   const fmt = (s) =>
     `${Math.floor(s / 60)
@@ -30,10 +34,22 @@ export default function PronunciationStep() {
         const response =
           await SessionService.getAssessmentContent("pronunciation");
         setPrompt(
-          response?.prompt?.reference_text ||
+          response?.passage ||
+            response?.prompt?.reference_text ||
             response?.prompt?.title ||
             "Read the prompt aloud.",
         );
+        // prepare word array for live preview while recording
+        const passageText =
+          response?.passage ||
+          response?.prompt?.reference_text ||
+          response?.prompt?.title ||
+          "";
+        promptWordsRef.current = passageText
+          .replace(/\s+/g, " ")
+          .trim()
+          .split(" ")
+          .filter(Boolean);
       } catch (err) {
         setPrompt("Read the prompt aloud.");
         setError(err.message || "Failed to load pronunciation prompt.");
@@ -64,6 +80,55 @@ export default function PronunciationStep() {
       setTime(0);
       await recorderRef.current.startRecording();
 
+      // start speech recognition (for live transcript preview) when available
+      try {
+        const SpeechRecognition =
+          window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+          recognitionRef.current = new SpeechRecognition();
+          recognitionRef.current.lang = (data.language || "en").startsWith("en")
+            ? "en-US"
+            : data.language || "en-US";
+          recognitionRef.current.interimResults = true;
+          recognitionRef.current.maxAlternatives = 1;
+
+          recognitionRef.current.onresult = (ev) => {
+            try {
+              let interim = "";
+              let final = "";
+              for (let i = 0; i < ev.results.length; i++) {
+                const res = ev.results[i];
+                if (res.isFinal) {
+                  final += (res[0].transcript || "") + " ";
+                } else {
+                  interim += res[0].transcript || "";
+                }
+              }
+              const full = (final + interim).trim();
+              const words = full
+                .replace(/\s+/g, " ")
+                .split(" ")
+                .filter(Boolean);
+              spokenWordsRef.current = words;
+              const lastTwo = words
+                .slice(Math.max(0, words.length - 2))
+                .join(" ");
+              setLivePreview(lastTwo || "");
+            } catch (err) {
+              // ignore parsing errors
+            }
+          };
+
+          recognitionRef.current.onerror = () => {
+            recognitionRef.current = null;
+          };
+
+          recognitionRef.current.start();
+        }
+      } catch (err) {
+        recognitionRef.current = null;
+      }
+
       let elapsed = 0;
       timer.current = setInterval(() => {
         elapsed += 1;
@@ -71,6 +136,33 @@ export default function PronunciationStep() {
         bars.current.forEach((bar) => {
           if (bar) bar.style.height = `${Math.random() * 80 + 10}px`;
         });
+        // Prefer live speech recognition transcript when available
+        const spoken = spokenWordsRef.current || [];
+        if (spoken.length > 0) {
+          const lastTwoSpoken = spoken
+            .slice(Math.max(0, spoken.length - 2))
+            .join(" ");
+          setLivePreview(lastTwoSpoken || "");
+        } else {
+          // fallback: estimate words-per-second and show last TWO words already read
+          const words = promptWordsRef.current || [];
+          const totalWords = words.length || 0;
+          const estimatedDuration = Math.max(
+            10,
+            Math.min(120, Math.ceil(totalWords / 2 || 30)),
+          );
+          const wps = totalWords > 0 ? totalWords / estimatedDuration : 0.5;
+          const readCount = Math.min(
+            totalWords,
+            Math.max(0, Math.floor(elapsed * wps)),
+          );
+          const sliceStart = Math.max(0, readCount - 2);
+          const lastTwo = words
+            .slice(sliceStart, readCount)
+            .filter(Boolean)
+            .join(" ");
+          setLivePreview(lastTwo || "");
+        }
         if (elapsed >= 30) {
           stop();
         }
@@ -85,6 +177,15 @@ export default function PronunciationStep() {
     clearInterval(timer.current);
     setRecording(false);
     resetVisualizer();
+    // stop speech recognition if active
+    try {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      }
+    } catch (err) {
+      recognitionRef.current = null;
+    }
 
     try {
       setUploading(true);
@@ -147,6 +248,14 @@ export default function PronunciationStep() {
         <div className="speaking-test">
           <div className="speaking-prompt">
             "{loading ? "Loading prompt..." : prompt}"
+          </div>
+          <div style={{ textAlign: "center", marginTop: 8, marginBottom: 6 }}>
+            <div style={{ color: "#6b7280", fontSize: "0.9rem" }}>
+              Read so far
+            </div>
+            <div style={{ fontWeight: 700, fontSize: "1.05rem", marginTop: 4 }}>
+              {livePreview || "..."}
+            </div>
           </div>
           <div className="recording-section">
             <div className="recording-visualizer" id="pronunciationVisualizer">

@@ -12,7 +12,7 @@ import ProfilePage from "./pages/ProfilePage";
 import AssessmentPage from "./pages/Assessment/AssessmentPage";
 import LanguageStep from "./pages/Assessment/LanguageStep";
 import PronunciationStep from "./pages/Assessment/PronunciationStep";
-import SpeakingStep from "./pages/Assessment/SpeakingStep";
+import WritingStep from "./pages/Assessment/WritingStep";
 import GrammarStep from "./pages/Assessment/GrammarStep";
 import ReadingStep from "./pages/Assessment/ReadingStep";
 import ResultsStep from "./pages/Assessment/ResultsStep";
@@ -38,7 +38,7 @@ export default function App() {
               <Route
                 path="/dashboard"
                 element={
-                  <AuthRequired requireAssessment={true}>
+                  <AuthRequired>
                     <DashboardPage />
                   </AuthRequired>
                 }
@@ -46,7 +46,7 @@ export default function App() {
               <Route
                 path="/practice"
                 element={
-                  <AuthRequired requireAssessment={true}>
+                  <AuthRequired>
                     <PracticePage />
                   </AuthRequired>
                 }
@@ -54,7 +54,7 @@ export default function App() {
               <Route
                 path="/community"
                 element={
-                  <AuthRequired requireAssessment={true}>
+                  <AuthRequired>
                     <CommunityPage />
                   </AuthRequired>
                 }
@@ -62,7 +62,7 @@ export default function App() {
               <Route
                 path="/profile"
                 element={
-                  <AuthRequired requireAssessment={true}>
+                  <AuthRequired>
                     <ProfilePage />
                   </AuthRequired>
                 }
@@ -83,7 +83,7 @@ export default function App() {
                 />
                 <Route path="language" element={<LanguageStep />} />
                 <Route path="pronunciation" element={<PronunciationStep />} />
-                <Route path="speaking" element={<SpeakingStep />} />
+                <Route path="writing" element={<WritingStep />} />
                 <Route path="grammar" element={<GrammarStep />} />
                 <Route path="reading" element={<ReadingStep />} />
                 <Route path="results" element={<ResultsStep />} />
